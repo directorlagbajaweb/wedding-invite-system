@@ -5,6 +5,7 @@ import { attemptLogin, hasSession } from "@/lib/auth";
 import { inviteUrl } from "@/lib/codes";
 import { defaultAdmits, MAX_ADMITS, MIN_ADMITS, normaliseGuestType, parseAdmits, toCsv } from "@/lib/csv";
 import { insertGuests, type NewGuest } from "@/lib/guests";
+import { parseRsvp } from "@/lib/rsvp";
 import { getSupabase, type Guest } from "@/lib/supabase";
 
 /* ---------- Password gate ---------- */
@@ -60,7 +61,7 @@ export async function loadGuests(): Promise<Guest[] | null> {
   if (!(await hasSession("admin"))) return null;
   const { data, error } = await getSupabase()
     .from("guests")
-    .select("id, name, phone, type, code, admits, arrived_at, created_at")
+    .select("id, name, phone, type, code, admits, rsvp, rsvp_message, rsvp_at, arrived_at, created_at")
     .order("created_at", { ascending: true })
     .limit(2000);
   if (error) throw new Error("Could not load guests");
@@ -199,6 +200,30 @@ export async function updateAdmits(id: string, admits: string | number): Promise
   return { ok: true, data: undefined };
 }
 
+/** Sets a guest's RSVP by hand (e.g. they replied by phone). "" clears it, along with any message. */
+export async function setRsvp(id: string, rsvp: string): Promise<ActionResult> {
+  if (!(await hasSession("admin"))) return { ok: false, error: NOT_SIGNED_IN };
+  if (!UUID.test(id)) return { ok: false, error: "Unknown guest." };
+  const answer = parseRsvp(rsvp);
+  if (answer === null && rsvp !== "") return { ok: false, error: "Choose Coming, Not coming or No reply." };
+
+  const { data, error } = await getSupabase()
+    .from("guests")
+    .update(
+      answer
+        ? { rsvp: answer, rsvp_at: new Date().toISOString() }
+        : { rsvp: null, rsvp_message: null, rsvp_at: null },
+    )
+    .eq("id", id)
+    .not("name", "is", null)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: "Could not save the RSVP." };
+  if (!data) return { ok: false, error: "Only guests with a name can RSVP." };
+  refresh();
+  return { ok: true, data: undefined };
+}
+
 export async function undoCheckIn(id: string): Promise<ActionResult> {
   if (!(await hasSession("admin"))) return { ok: false, error: NOT_SIGNED_IN };
   if (!UUID.test(id)) return { ok: false, error: "Unknown guest." };
@@ -257,11 +282,25 @@ export async function exportGuestsCsv(): Promise<ActionResult<string>> {
     g.code ? inviteUrl(g.code) : "",
     String(g.admits ?? 1),
     g.arrived_at ? lagosDateTime.format(new Date(g.arrived_at)).replace(",", "") : "",
+    g.rsvp ?? "",
+    g.rsvp_message ?? "",
+    g.rsvp_at ? lagosDateTime.format(new Date(g.rsvp_at)).replace(",", "") : "",
   ]);
   return {
     ok: true,
     data: toCsv([
-      ["name", "phone", "type", "code", "invite_link", "admits", "arrived_at (Lagos time)"],
+      [
+        "name",
+        "phone",
+        "type",
+        "code",
+        "invite_link",
+        "admits",
+        "arrived_at (Lagos time)",
+        "rsvp",
+        "rsvp_message",
+        "rsvp_at (Lagos time)",
+      ],
       ...rows,
       // Totals row. The name column is blank so re-importing this file skips it.
       [],

@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { MAX_ADMITS, MIN_ADMITS } from "@/lib/csv";
+import { RSVP_LABEL } from "@/lib/rsvp";
 import type { Guest, GuestType } from "@/lib/supabase";
-import { deleteGuest, undoCheckIn, updateAdmits, updatePhone } from "./actions";
+import { deleteGuest, setRsvp, undoCheckIn, updateAdmits, updatePhone } from "./actions";
 import { btnSmall, card, formatArrival, input, inviteLink, useCopy, WhatsAppButton } from "./ui";
 
 const TYPE_LABEL: Record<GuestType, string> = {
@@ -14,11 +15,13 @@ const TYPE_LABEL: Record<GuestType, string> = {
 
 type TypeFilter = "all" | GuestType;
 type ArrivedFilter = "all" | "arrived" | "not";
+type RsvpFilter = "all" | "yes" | "no" | "none";
 
 export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: string }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState<TypeFilter>("all");
   const [arrived, setArrived] = useState<ArrivedFilter>("all");
+  const [rsvp, setRsvpFilter] = useState<RsvpFilter>("all");
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const { copied, copy } = useCopy();
@@ -28,12 +31,19 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
     return guests
       .filter((g) => (type === "all" ? true : g.type === type))
       .filter((g) => (arrived === "all" ? true : arrived === "arrived" ? !!g.arrived_at : !g.arrived_at))
+      .filter((g) =>
+        rsvp === "all"
+          ? true
+          : rsvp === "none"
+            ? !g.rsvp && !!(g.name || g.arrived_at) // same "No reply" as the stats
+            : g.rsvp === rsvp,
+      )
       .filter((g) => (q ? (g.name ?? "").toLowerCase().includes(q) : true))
       .sort((a, b) => {
         if (!a.name !== !b.name) return a.name ? -1 : 1; // unassigned spares last
         return (a.name ?? a.code ?? "").localeCompare(b.name ?? b.code ?? "");
       });
-  }, [guests, query, type, arrived]);
+  }, [guests, query, type, arrived, rsvp]);
 
   async function run(id: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setBusyId(id);
@@ -98,6 +108,22 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
               <option value="not">Not arrived</option>
             </select>
           </div>
+          <div>
+            <label htmlFor="gt-rsvp" className="sr-only">
+              Filter by RSVP
+            </label>
+            <select
+              id="gt-rsvp"
+              value={rsvp}
+              onChange={(e) => setRsvpFilter(e.target.value as RsvpFilter)}
+              className={`${input} w-40`}
+            >
+              <option value="all">All RSVPs</option>
+              <option value="yes">Coming</option>
+              <option value="no">Not coming</option>
+              <option value="none">No reply</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -108,7 +134,7 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
       ) : null}
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-hairline bg-white">
-        <table className="w-full min-w-[1040px] text-left text-sm">
+        <table className="w-full min-w-[1200px] text-left text-sm">
           <thead className="bg-paper text-muted">
             <tr>
               <th scope="col" className="px-4 py-3 font-medium">Name</th>
@@ -116,6 +142,7 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
               <th scope="col" className="px-4 py-3 font-medium">Admits</th>
               <th scope="col" className="px-4 py-3 font-medium">Type</th>
               <th scope="col" className="px-4 py-3 font-medium">Code</th>
+              <th scope="col" className="px-4 py-3 font-medium">RSVP</th>
               <th scope="col" className="px-4 py-3 font-medium">Arrived</th>
               <th scope="col" className="px-4 py-3 font-medium">Actions</th>
             </tr>
@@ -123,7 +150,7 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
           <tbody className="divide-y divide-hairline">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted">
                   No guests match.
                 </td>
               </tr>
@@ -158,6 +185,23 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
                     <td className="px-4 py-3">{TYPE_LABEL[g.type]}</td>
                     <td className="px-4 py-3 font-mono tracking-wider whitespace-nowrap">
                       {g.code ?? <span className="text-muted">&ndash;</span>}
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <RsvpCell
+                        guest={g}
+                        label={label}
+                        busy={busy}
+                        onChange={(value) => {
+                          if (
+                            value === "" &&
+                            g.rsvp_message &&
+                            !window.confirm(`Clear the RSVP for ${label}? Their message will be deleted too.`)
+                          ) {
+                            return;
+                          }
+                          void run(g.id, () => setRsvp(g.id, value));
+                        }}
+                      />
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {g.arrived_at ? (
@@ -364,5 +408,62 @@ function AdmitsCell({
         {saving ? "Saving…" : "Save"}
       </button>
     </form>
+  );
+}
+
+const RSVP_COLOUR = { yes: "text-success", no: "text-warning", none: "text-muted" } as const;
+
+function RsvpCell({
+  guest,
+  label,
+  busy,
+  onChange,
+}: {
+  guest: Guest;
+  label: string;
+  busy: boolean;
+  onChange: (value: "" | "yes" | "no") => void;
+}) {
+  const [showMessage, setShowMessage] = useState(false);
+  if (!guest.name) return <span className="text-muted">&ndash;</span>;
+
+  const status = guest.rsvp ?? "none";
+  const messageId = `rsvp-msg-${guest.id}`;
+  return (
+    <div className="w-44">
+      <label htmlFor={`rsvp-${guest.id}`} className="sr-only">
+        RSVP for {label}
+      </label>
+      <select
+        id={`rsvp-${guest.id}`}
+        value={guest.rsvp ?? ""}
+        disabled={busy}
+        onChange={(e) => onChange(e.target.value as "" | "yes" | "no")}
+        className={`h-9 rounded-lg border border-hairline bg-white px-2 text-sm font-medium focus:border-gold focus:outline-none ${RSVP_COLOUR[status]}`}
+      >
+        <option value="yes">{RSVP_LABEL.yes}</option>
+        <option value="no">{RSVP_LABEL.no}</option>
+        <option value="">{RSVP_LABEL.none}</option>
+      </select>
+      {guest.rsvp_at ? <p className="mt-1 text-xs text-muted">{formatArrival(guest.rsvp_at)}</p> : null}
+      {guest.rsvp_message ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowMessage((v) => !v)}
+            aria-expanded={showMessage}
+            aria-controls={messageId}
+            className="mt-1 text-xs font-medium text-gold underline underline-offset-2"
+          >
+            {showMessage ? "Hide message" : "Message"}
+          </button>
+          {showMessage ? (
+            <p id={messageId} className="mt-1 text-sm whitespace-pre-line break-words">
+              {guest.rsvp_message}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+    </div>
   );
 }

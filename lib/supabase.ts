@@ -10,6 +10,9 @@ export type Guest = {
   type: GuestType;
   code: string | null;
   admits: number;
+  rsvp: "yes" | "no" | null;
+  rsvp_message: string | null;
+  rsvp_at: string | null;
   arrived_at: string | null;
   created_at: string;
 };

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { EVENT } from "@/lib/event";
 import { Amp, CardShell, GoldRule } from "../card-shell";
+import type { SavedRsvp } from "./actions";
+import { Rsvp } from "./rsvp";
 
 type Phase = "closed" | "pressing" | "closing" | "open";
 
@@ -12,6 +14,8 @@ type Props = {
   admits: number;
   qrDataUrl: string;
   joyUrl: string;
+  canRsvp: boolean;
+  rsvp: SavedRsvp | null;
 };
 
 type Sparkle = { id: number; dx: number; dy: number; size: number; delay: number };
@@ -35,7 +39,7 @@ function makeSparkles(): Sparkle[] {
   });
 }
 
-export function Invitation({ name, code, admits, qrDataUrl, joyUrl }: Props) {
+export function Invitation(props: Props) {
   const [phase, setPhase] = useState<Phase>("closed");
   const [burst, setBurst] = useState<Burst | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -71,7 +75,7 @@ export function Invitation({ name, code, admits, qrDataUrl, joyUrl }: Props) {
   return (
     <CardShell>
       {phase === "open" ? (
-        <Revealed name={name} code={code} admits={admits} qrDataUrl={qrDataUrl} joyUrl={joyUrl} headingRef={headingRef} />
+        <Revealed {...props} headingRef={headingRef} />
       ) : (
         <Closed phase={phase} onOpen={open} />
       )}
@@ -141,6 +145,8 @@ function Revealed({
   admits,
   qrDataUrl,
   joyUrl,
+  canRsvp,
+  rsvp,
   headingRef,
 }: Props & { headingRef: React.RefObject<HTMLHeadingElement | null> }) {
   let i = 0;
@@ -181,6 +187,12 @@ function Revealed({
         Colours of the day: <span className="text-ink">{EVENT.colours}</span>
       </p>
 
+      {canRsvp ? (
+        <div className="reveal-item" style={step()}>
+          <Rsvp code={code} admits={admits} initial={rsvp} />
+        </div>
+      ) : null}
+
       <div className="reveal-item" style={step()}>
         <GoldRule className="my-8" />
       </div>
@@ -219,7 +231,7 @@ function Revealed({
             rel="noopener noreferrer"
             className="btn-gold w-full sm:w-auto"
           >
-            View wedding website &amp; RSVP
+            View wedding website
           </a>
         </div>
       ) : null}

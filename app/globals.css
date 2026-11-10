@@ -255,7 +255,31 @@ body {
   }
 }
 
+/* ---------- Invite: RSVP ---------- */
+
+.rsvp-choice {
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.12s ease;
+}
+.rsvp-choice:active {
+  transform: scale(0.98);
+}
+.rsvp-in {
+  animation: reveal-in 0.5s var(--ease) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .rsvp-choice {
+    transition: none;
+  }
+  .rsvp-choice:active {
+    transform: none;
+  }
+  .rsvp-in {
+    animation: none;
+  }
   .seal,
   .seal[data-phase="closing"],
   .btn-gold {

@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { getSupabase } from "@/lib/supabase";
 import { inviteUrl, normaliseCode } from "@/lib/codes";
 import { Amp, CardShell, GoldRule } from "../card-shell";
+import type { RsvpAnswer } from "@/lib/rsvp";
 import { Invitation } from "./invitation";
 
 export const metadata: Metadata = {
@@ -30,7 +31,7 @@ async function InviteLoader({
 
   const { data, error } = await getSupabase()
     .from("guests")
-    .select("name, code, admits")
+    .select("name, code, admits, rsvp, rsvp_message, rsvp_at")
     .eq("code", code)
     .neq("type", "printed")
     .maybeSingle();
@@ -45,9 +46,18 @@ async function InviteLoader({
     color: { dark: "#4B2A1E", light: "#FFFFFF" },
   });
 
+  // Unassigned spares (no name) can't RSVP. Only this guest's own RSVP is sent to the page.
+  const canRsvp = !!data.name?.trim();
+  const rsvp =
+    canRsvp && (data.rsvp === "yes" || data.rsvp === "no")
+      ? { rsvp: data.rsvp as RsvpAnswer, message: data.rsvp_message as string | null, at: data.rsvp_at as string }
+      : null;
+
   return (
     <Invitation
       name={data.name?.trim() || "Guest"}
+      canRsvp={canRsvp}
+      rsvp={rsvp}
       code={data.code}
       admits={data.admits ?? 1}
       qrDataUrl={qrDataUrl}

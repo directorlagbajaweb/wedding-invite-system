@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MAX_ADMITS, MIN_ADMITS } from "@/lib/csv";
 import type { Guest } from "@/lib/supabase";
 import { assignSpare, createSpares } from "./actions";
 import { btnPrimary, btnSmall, card, formatArrival, input, inviteLink, NewInviteLink, useCopy } from "./ui";
@@ -134,6 +135,7 @@ function AssignForm({
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [admits, setAdmits] = useState("1");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -141,7 +143,7 @@ function AssignForm({
     e.preventDefault();
     setPending(true);
     setError("");
-    const res = await assignSpare(id, name, phone).catch(() => null);
+    const res = await assignSpare(id, name, phone, admits).catch(() => null);
     setPending(false);
     if (!res || !res.ok) {
       setError(res?.error ?? "Could not assign the spare.");
@@ -151,7 +153,7 @@ function AssignForm({
   }
 
   return (
-    <form onSubmit={submit} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
+    <form onSubmit={submit} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto_auto]">
       <label className="sr-only" htmlFor={`as-name-${id}`}>
         Name
       </label>
@@ -175,6 +177,20 @@ function AssignForm({
         onChange={(e) => setPhone(e.target.value)}
         className={input}
       />
+      <label className="flex items-center gap-2 text-sm font-medium">
+        Admits
+        <input
+          type="number"
+          inputMode="numeric"
+          min={MIN_ADMITS}
+          max={MAX_ADMITS}
+          step={1}
+          required
+          value={admits}
+          onChange={(e) => setAdmits(e.target.value)}
+          className={`${input} w-20`}
+        />
+      </label>
       <button type="submit" disabled={pending} className={btnPrimary}>
         {pending ? "Saving…" : "Save"}
       </button>
@@ -182,7 +198,7 @@ function AssignForm({
         Cancel
       </button>
       {error ? (
-        <p role="alert" className="text-sm text-warning sm:col-span-4">
+        <p role="alert" className="text-sm text-warning sm:col-span-5">
           {error}
         </p>
       ) : null}

@@ -30,7 +30,7 @@ async function InviteLoader({
 
   const { data, error } = await getSupabase()
     .from("guests")
-    .select("name, code")
+    .select("name, code, admits")
     .eq("code", code)
     .neq("type", "printed")
     .maybeSingle();
@@ -49,6 +49,7 @@ async function InviteLoader({
     <Invitation
       name={data.name?.trim() || "Guest"}
       code={data.code}
+      admits={data.admits ?? 1}
       qrDataUrl={qrDataUrl}
       joyUrl={process.env.JOY_URL ?? ""}
     />

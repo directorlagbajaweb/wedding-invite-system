@@ -9,6 +9,7 @@ export type Guest = {
   phone: string | null;
   type: GuestType;
   code: string | null;
+  admits: number;
   arrived_at: string | null;
   created_at: string;
 };

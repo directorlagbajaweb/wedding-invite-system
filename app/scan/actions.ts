@@ -29,8 +29,8 @@ export async function submitPin(_prev: PinState, formData: FormData): Promise<Pi
 /* ---------- Check-in ---------- */
 
 export type CheckInResult =
-  | { status: "valid"; name: string }
-  | { status: "already_used"; name: string; time: string }
+  | { status: "valid"; name: string; admits: number }
+  | { status: "already_used"; name: string; time: string; admits: number }
   | { status: "invalid" }
   | { status: "error"; message: string };
 
@@ -38,6 +38,7 @@ type RpcResponse = {
   result: "valid" | "already_used" | "invalid";
   name: string | null;
   arrived_at: string | null;
+  admits: number | null;
 };
 
 const lagosTime = new Intl.DateTimeFormat("en-GB", {
@@ -72,9 +73,10 @@ async function runCheckIn(
 
   const res = data as RpcResponse;
   const name = res.name?.trim() || "Guest";
-  if (res.result === "valid") return { status: "valid", name };
+  const admits = res.admits ?? 1;
+  if (res.result === "valid") return { status: "valid", name, admits };
   if (res.result === "already_used") {
-    return { status: "already_used", name, time: formatTime(res.arrived_at) };
+    return { status: "already_used", name, time: formatTime(res.arrived_at), admits };
   }
   return { status: "invalid" };
 }
@@ -98,6 +100,7 @@ export type SearchRow = {
   id: string;
   name: string;
   type: GuestType;
+  admits: number;
   arrivedTime: string | null;
 };
 
@@ -110,7 +113,7 @@ export async function searchGuests(query: string): Promise<SearchRow[] | null> {
   const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const { data, error } = await getSupabase()
     .from("guests")
-    .select("id, name, type, arrived_at")
+    .select("id, name, type, admits, arrived_at")
     .not("name", "is", null)
     .ilike("name", pattern)
     .order("name")
@@ -121,6 +124,7 @@ export async function searchGuests(query: string): Promise<SearchRow[] | null> {
     id: g.id as string,
     name: g.name as string,
     type: g.type as GuestType,
+    admits: (g.admits as number | null) ?? 1,
     arrivedTime: g.arrived_at ? formatTime(g.arrived_at as string) : null,
   }));
 }
@@ -134,16 +138,31 @@ export async function getStats(): Promise<Stats | null> {
   return loadStats();
 }
 
-/** Expected guests = everyone with a name, plus anyone who arrived on an unnamed spare. */
+const PAGE = 1000;
+
+/**
+ * Counts people, not invites: each invite contributes its admits.
+ * Expected = everyone with a name, plus anyone who arrived on an unnamed spare.
+ */
 async function loadStats(): Promise<Stats | null> {
   const db = getSupabase();
-  const [total, arrived] = await Promise.all([
-    db
+  let total = 0;
+  let arrived = 0;
+  // Page through, since the API caps rows per request.
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db
       .from("guests")
-      .select("id", { count: "exact", head: true })
-      .or("name.not.is.null,arrived_at.not.is.null"),
-    db.from("guests").select("id", { count: "exact", head: true }).not("arrived_at", "is", null),
-  ]);
-  if (total.error || arrived.error) return null;
-  return { total: total.count ?? 0, arrived: arrived.count ?? 0 };
+      .select("admits, arrived_at")
+      .or("name.not.is.null,arrived_at.not.is.null")
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error || !data) return null;
+    for (const g of data) {
+      const a = (g.admits as number | null) ?? 1;
+      total += a;
+      if (g.arrived_at) arrived += a;
+    }
+    if (data.length < PAGE) break;
+  }
+  return { total, arrived };
 }

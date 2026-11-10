@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { attemptLogin, hasSession } from "@/lib/auth";
 import { inviteUrl } from "@/lib/codes";
-import { normaliseGuestType, toCsv } from "@/lib/csv";
+import { defaultAdmits, MAX_ADMITS, MIN_ADMITS, normaliseGuestType, parseAdmits, toCsv } from "@/lib/csv";
 import { insertGuests, type NewGuest } from "@/lib/guests";
 import { getSupabase, type Guest } from "@/lib/supabase";
 
@@ -46,13 +46,21 @@ function cleanPhone(v: unknown): string | null {
 
 const cleanType = normaliseGuestType;
 
+const BAD_ADMITS = `Admits must be a whole number from ${MIN_ADMITS} to ${MAX_ADMITS}.`;
+
+/** Blank means the default for the name (2 for couples, otherwise 1). Invalid returns null. */
+function cleanAdmits(v: unknown, name: string): number | null {
+  if (String(v ?? "").trim() === "") return defaultAdmits(name);
+  return parseAdmits(v);
+}
+
 /* ---------- Data ---------- */
 
 export async function loadGuests(): Promise<Guest[] | null> {
   if (!(await hasSession("admin"))) return null;
   const { data, error } = await getSupabase()
     .from("guests")
-    .select("id, name, phone, type, code, arrived_at, created_at")
+    .select("id, name, phone, type, code, admits, arrived_at, created_at")
     .order("created_at", { ascending: true })
     .limit(2000);
   if (error) throw new Error("Could not load guests");
@@ -65,15 +73,18 @@ export async function addGuest(input: {
   name: string;
   phone: string;
   type: string;
+  admits: string | number;
 }): Promise<ActionResult<{ name: string; code: string | null; url: string | null; phone: string | null }>> {
   if (!(await hasSession("admin"))) return { ok: false, error: NOT_SIGNED_IN };
   const name = cleanName(input.name);
   const type = cleanType(input.type);
   if (!name) return { ok: false, error: "Name is required." };
   if (!type) return { ok: false, error: "Type must be e-invite or printed." };
+  const admits = cleanAdmits(input.admits, name);
+  if (admits === null) return { ok: false, error: BAD_ADMITS };
 
   try {
-    const [g] = await insertGuests([{ name, phone: cleanPhone(input.phone), type }]);
+    const [g] = await insertGuests([{ name, phone: cleanPhone(input.phone), type, admits }]);
     refresh();
     return {
       ok: true,
@@ -87,7 +98,7 @@ export async function addGuest(input: {
 /* ---------- CSV import ---------- */
 
 export async function importGuests(
-  rows: { name: string; phone: string; type: string }[],
+  rows: { name: string; phone: string; type: string; admits?: string | number }[],
 ): Promise<ActionResult<{ inserted: number; eInvites: number; printed: number }>> {
   if (!(await hasSession("admin"))) return { ok: false, error: NOT_SIGNED_IN };
   if (!Array.isArray(rows) || rows.length === 0) return { ok: false, error: "Nothing to import." };
@@ -99,7 +110,9 @@ export async function importGuests(
     const type = cleanType(r.type);
     if (!name) continue;
     if (!type) return { ok: false, error: `"${name}" has an unknown type. Use e-invite or printed.` };
-    clean.push({ name, phone: cleanPhone(r.phone), type });
+    const admits = cleanAdmits(r.admits, name);
+    if (admits === null) return { ok: false, error: `"${name}": ${BAD_ADMITS}` };
+    clean.push({ name, phone: cleanPhone(r.phone), type, admits });
   }
   if (clean.length === 0) return { ok: false, error: "Nothing to import." };
 
@@ -127,7 +140,7 @@ export async function createSpares(count: number): Promise<ActionResult<{ create
   if (!Number.isFinite(n) || n < 1 || n > 50) return { ok: false, error: "Choose a number from 1 to 50." };
 
   try {
-    const rows: NewGuest[] = Array.from({ length: n }, () => ({ name: null, phone: null, type: "spare" }));
+    const rows: NewGuest[] = Array.from({ length: n }, () => ({ name: null, phone: null, type: "spare", admits: 1 }));
     const saved = await insertGuests(rows);
     refresh();
     return { ok: true, data: { created: saved.length } };
@@ -140,16 +153,19 @@ export async function assignSpare(
   id: string,
   name: string,
   phone: string,
+  admits: string | number,
 ): Promise<ActionResult<{ code: string; url: string; phone: string | null; name: string }>> {
   if (!(await hasSession("admin"))) return { ok: false, error: NOT_SIGNED_IN };
   const n = cleanName(name);
   if (!UUID.test(id)) return { ok: false, error: "Unknown spare." };
   if (!n) return { ok: false, error: "Name is required." };
+  const a = cleanAdmits(admits, n);
+  if (a === null) return { ok: false, error: BAD_ADMITS };
 
   const p = cleanPhone(phone);
   const { data, error } = await getSupabase()
     .from("guests")
-    .update({ name: n, phone: p, type: "e-invite" })
+    .update({ name: n, phone: p, type: "e-invite", admits: a })
     .eq("id", id)
     .eq("type", "spare")
     .is("name", null)
@@ -168,6 +184,17 @@ export async function updatePhone(id: string, phone: string): Promise<ActionResu
   if (!UUID.test(id)) return { ok: false, error: "Unknown guest." };
   const { error } = await getSupabase().from("guests").update({ phone: cleanPhone(phone) }).eq("id", id);
   if (error) return { ok: false, error: "Could not save the phone number." };
+  refresh();
+  return { ok: true, data: undefined };
+}
+
+export async function updateAdmits(id: string, admits: string | number): Promise<ActionResult> {
+  if (!(await hasSession("admin"))) return { ok: false, error: NOT_SIGNED_IN };
+  if (!UUID.test(id)) return { ok: false, error: "Unknown guest." };
+  const a = parseAdmits(admits);
+  if (a === null) return { ok: false, error: BAD_ADMITS };
+  const { error } = await getSupabase().from("guests").update({ admits: a }).eq("id", id);
+  if (error) return { ok: false, error: "Could not save admits." };
   refresh();
   return { ok: true, data: undefined };
 }
@@ -217,17 +244,29 @@ export async function exportGuestsCsv(): Promise<ActionResult<string>> {
   if (guests === null) return { ok: false, error: NOT_SIGNED_IN };
   if (!guests) return { ok: false, error: "Could not load guests." };
 
+  // Same "expected" rule as the stats: named guests plus anyone who arrived on an unnamed spare.
+  const expected = guests.filter((g) => g.name || g.arrived_at);
+  const people = expected.reduce((sum, g) => sum + (g.admits ?? 1), 0);
+  const peopleArrived = guests.filter((g) => g.arrived_at).reduce((sum, g) => sum + (g.admits ?? 1), 0);
+
   const rows = guests.map((g) => [
     g.name ?? "",
     g.phone ?? "",
     g.type,
     g.code ?? "",
     g.code ? inviteUrl(g.code) : "",
+    String(g.admits ?? 1),
     g.arrived_at ? lagosDateTime.format(new Date(g.arrived_at)).replace(",", "") : "",
   ]);
   return {
     ok: true,
-    data: toCsv([["name", "phone", "type", "code", "invite_link", "arrived_at (Lagos time)"], ...rows]),
+    data: toCsv([
+      ["name", "phone", "type", "code", "invite_link", "admits", "arrived_at (Lagos time)"],
+      ...rows,
+      // Totals row. The name column is blank so re-importing this file skips it.
+      [],
+      ["", "", "", "", "Total people", String(people), `${peopleArrived} arrived`],
+    ]),
   };
 }
 

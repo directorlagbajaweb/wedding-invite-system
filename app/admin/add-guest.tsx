@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MAX_ADMITS, MIN_ADMITS } from "@/lib/csv";
 import { addGuest } from "./actions";
 import { btnPrimary, card, input, NewInviteLink } from "./ui";
 
@@ -10,6 +11,7 @@ export function AddGuest() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [type, setType] = useState<"e-invite" | "printed">("e-invite");
+  const [admits, setAdmits] = useState("1");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<Created | null>(null);
@@ -18,7 +20,7 @@ export function AddGuest() {
     e.preventDefault();
     setPending(true);
     setError("");
-    const res = await addGuest({ name, phone, type }).catch(() => null);
+    const res = await addGuest({ name, phone, type, admits }).catch(() => null);
     setPending(false);
     if (!res || !res.ok) {
       setError(res?.error ?? "Could not save the guest.");
@@ -27,6 +29,7 @@ export function AddGuest() {
     setCreated(res.data);
     setName("");
     setPhone("");
+    setAdmits("1");
   }
 
   return (
@@ -75,6 +78,23 @@ export function AddGuest() {
             <option value="e-invite">E-invite (gets a QR code)</option>
             <option value="printed">Printed card (no code)</option>
           </select>
+        </div>
+        <div>
+          <label htmlFor="ag-admits" className="text-sm font-medium">
+            Admits <span className="font-normal text-muted">(people on this invite)</span>
+          </label>
+          <input
+            id="ag-admits"
+            type="number"
+            inputMode="numeric"
+            min={MIN_ADMITS}
+            max={MAX_ADMITS}
+            step={1}
+            required
+            value={admits}
+            onChange={(e) => setAdmits(e.target.value)}
+            className={`${input} mt-1`}
+          />
         </div>
         <div className="flex items-center gap-3 sm:col-span-2">
           <button type="submit" disabled={pending} className={btnPrimary}>

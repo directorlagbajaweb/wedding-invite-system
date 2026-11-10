@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { normaliseGuestType, parseCsv } from "@/lib/csv";
+import { defaultAdmits, MAX_ADMITS, MIN_ADMITS, normaliseGuestType, parseAdmits, parseCsv } from "@/lib/csv";
 import type { Guest } from "@/lib/supabase";
 import { importGuests } from "./actions";
 import { btnPrimary, btnSecondary, card } from "./ui";
@@ -12,6 +12,9 @@ type PreviewRow = {
   phone: string;
   rawType: string;
   type: "e-invite" | "printed" | null;
+  rawAdmits: string;
+  /** null when the admits cell is filled in but isn't a whole number from 1 to 10. */
+  admits: number | null;
   duplicate: "file" | "existing" | null;
   include: boolean;
 };
@@ -25,8 +28,15 @@ function buildPreview(fileName: string, text: string, existing: Guest[]): Previe
   if (table.length === 0) return "The file is empty.";
 
   const header = table[0].map((h) => h.trim().toLowerCase());
-  const col = { name: header.indexOf("name"), phone: header.indexOf("phone"), type: header.indexOf("type") };
-  if (col.name === -1) return "The first row must be a header with a “name” column (and optionally phone, type).";
+  const col = {
+    name: header.indexOf("name"),
+    phone: header.indexOf("phone"),
+    type: header.indexOf("type"),
+    admits: header.indexOf("admits"),
+  };
+  if (col.name === -1) {
+    return "The first row must be a header with a “name” column (and optionally phone, type, admits).";
+  }
 
   const known = new Set(existing.filter((g) => g.name).map((g) => key(g.name!)));
   const seen = new Set<string>();
@@ -42,6 +52,8 @@ function buildPreview(fileName: string, text: string, existing: Guest[]): Previe
     }
     const rawType = get(col.type);
     const type = normaliseGuestType(rawType);
+    const rawAdmits = get(col.admits);
+    const admits = rawAdmits === "" ? defaultAdmits(name) : parseAdmits(rawAdmits);
     const k = key(name);
     const duplicate = known.has(k) ? "existing" : seen.has(k) ? "file" : null;
     seen.add(k);
@@ -51,14 +63,18 @@ function buildPreview(fileName: string, text: string, existing: Guest[]): Previe
       phone: get(col.phone),
       rawType,
       type,
+      rawAdmits,
+      admits,
       duplicate,
-      include: type !== null && duplicate === null,
+      include: type !== null && admits !== null && duplicate === null,
     });
   });
 
   if (rows.length === 0) return "No guests found in the file.";
   return { fileName, rows, blankSkipped };
 }
+
+const importable = (r: PreviewRow) => r.include && r.type !== null && r.admits !== null;
 
 export function CsvImport({ existing }: { existing: Guest[] }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -91,12 +107,12 @@ export function CsvImport({ existing }: { existing: Guest[] }) {
 
   async function save() {
     if (!preview) return;
-    const chosen = preview.rows.filter((r) => r.include && r.type);
+    const chosen = preview.rows.filter(importable);
     if (chosen.length === 0) return;
     setSaving(true);
     setError("");
     const res = await importGuests(
-      chosen.map((r) => ({ name: r.name, phone: r.phone, type: r.type! })),
+      chosen.map((r) => ({ name: r.name, phone: r.phone, type: r.type!, admits: r.admits! })),
     ).catch(() => null);
     setSaving(false);
     if (!res || !res.ok) {
@@ -110,9 +126,11 @@ export function CsvImport({ existing }: { existing: Guest[] }) {
   }
 
   const rows = preview?.rows ?? [];
-  const chosen = rows.filter((r) => r.include && r.type);
+  const chosen = rows.filter(importable);
   const dupes = rows.filter((r) => r.duplicate).length;
   const badType = rows.filter((r) => !r.type).length;
+  const badAdmits = rows.filter((r) => r.admits === null).length;
+  const chosenPeople = chosen.reduce((sum, r) => sum + (r.admits ?? 0), 0);
 
   return (
     <section className={card} aria-labelledby="csv-title">
@@ -121,7 +139,8 @@ export function CsvImport({ existing }: { existing: Guest[] }) {
       </h2>
       <p className="mt-1 text-sm text-muted">
         Columns: <code>name</code>, <code>phone</code>, <code>type</code> (e-invite or printed; blank means
-        e-invite). You&rsquo;ll see a preview before anything is saved.
+        e-invite), <code>admits</code> ({MIN_ADMITS}&ndash;{MAX_ADMITS}; blank means 2 if the name has
+        &ldquo;&amp;&rdquo;, otherwise 1). You&rsquo;ll see a preview before anything is saved.
       </p>
 
       <label htmlFor="csv-file" className="mt-4 block text-sm font-medium">
@@ -155,11 +174,12 @@ export function CsvImport({ existing }: { existing: Guest[] }) {
               ? `, ${preview.blankSkipped} blank row${preview.blankSkipped === 1 ? "" : "s"} skipped`
               : ""}
             {dupes ? `, ${dupes} possible duplicate${dupes === 1 ? "" : "s"} (unticked)` : ""}
-            {badType ? `, ${badType} with an unknown type (can’t import)` : ""}.
+            {badType ? `, ${badType} with an unknown type (can’t import)` : ""}
+            {badAdmits ? `, ${badAdmits} with invalid admits (can’t import)` : ""}.
           </p>
 
           <div className="mt-3 max-h-[28rem] overflow-auto rounded-xl border border-hairline bg-white">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="sticky top-0 bg-paper text-muted">
                 <tr>
                   <th className="px-3 py-2 font-medium">Import</th>
@@ -167,6 +187,7 @@ export function CsvImport({ existing }: { existing: Guest[] }) {
                   <th className="px-3 py-2 font-medium">Name</th>
                   <th className="px-3 py-2 font-medium">Phone</th>
                   <th className="px-3 py-2 font-medium">Type</th>
+                  <th className="px-3 py-2 font-medium">Admits</th>
                   <th className="px-3 py-2 font-medium">Notes</th>
                 </tr>
               </thead>
@@ -177,7 +198,7 @@ export function CsvImport({ existing }: { existing: Guest[] }) {
                       <input
                         type="checkbox"
                         checked={r.include}
-                        disabled={!r.type}
+                        disabled={!r.type || r.admits === null}
                         onChange={() => toggle(r.line)}
                         aria-label={`Import ${r.name}`}
                         className="h-4 w-4 accent-[#B8894F]"
@@ -187,9 +208,16 @@ export function CsvImport({ existing }: { existing: Guest[] }) {
                     <td className="px-3 py-2 font-medium">{r.name}</td>
                     <td className="px-3 py-2">{r.phone || <span className="text-muted">&ndash;</span>}</td>
                     <td className="px-3 py-2">{r.type ?? <span className="text-warning">{r.rawType}</span>}</td>
+                    <td className="px-3 py-2 tabular-nums">
+                      {r.admits ?? <span className="text-warning">{r.rawAdmits}</span>}
+                    </td>
                     <td className="px-3 py-2">
                       {!r.type ? (
                         <span className="text-warning">Unknown type: use e-invite or printed</span>
+                      ) : r.admits === null ? (
+                        <span className="text-warning">
+                          Invalid admits: use a whole number from {MIN_ADMITS} to {MAX_ADMITS}
+                        </span>
                       ) : r.duplicate === "existing" ? (
                         <span className="text-warning">Duplicate: already in guest list</span>
                       ) : r.duplicate === "file" ? (
@@ -204,7 +232,9 @@ export function CsvImport({ existing }: { existing: Guest[] }) {
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="button" onClick={save} disabled={saving || chosen.length === 0} className={btnPrimary}>
-              {saving ? "Saving…" : `Save ${chosen.length} guest${chosen.length === 1 ? "" : "s"}`}
+              {saving
+                ? "Saving…"
+                : `Save ${chosen.length} guest${chosen.length === 1 ? "" : "s"} (${chosenPeople} ${chosenPeople === 1 ? "person" : "people"})`}
             </button>
             <button type="button" onClick={reset} disabled={saving} className={btnSecondary}>
               Cancel

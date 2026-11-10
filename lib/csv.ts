@@ -52,3 +52,19 @@ export function normaliseGuestType(v: unknown): "e-invite" | "printed" | null {
   if (t === "printed") return "printed";
   return null;
 }
+
+export const MIN_ADMITS = 1;
+export const MAX_ADMITS = 10;
+
+/** Default people per invite: 2 for couples ("A & B"), otherwise 1. */
+export function defaultAdmits(name: string | null | undefined): number {
+  return (name ?? "").includes("&") ? 2 : 1;
+}
+
+/** Admits from a CSV/form value: a whole number from 1 to 10. Anything else returns null. */
+export function parseAdmits(v: unknown): number | null {
+  const s = String(v ?? "").trim();
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return n >= MIN_ADMITS && n <= MAX_ADMITS ? n : null;
+}

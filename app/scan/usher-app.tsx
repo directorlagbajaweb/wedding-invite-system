@@ -114,7 +114,7 @@ export function UsherApp({ initialStats }: { initialStats: Stats | null }) {
             {stats ? (
               <>
                 {stats.arrived} <span className="font-normal text-muted">of</span> {stats.total}{" "}
-                <span className="font-normal text-muted">arrived</span>
+                <span className="font-normal text-muted">people arrived</span>
               </>
             ) : (
               <span className="font-normal text-muted">Count unavailable</span>
@@ -238,7 +238,8 @@ function NameSearch({
               <div className="min-w-0">
                 <p className="truncate text-lg font-semibold">{g.name}</p>
                 <p className="text-base text-muted">
-                  {TYPE_LABEL[g.type]} &middot;{" "}
+                  {TYPE_LABEL[g.type]} &middot; <span className="font-semibold text-ink">Admits {g.admits}</span>{" "}
+                  &middot;{" "}
                   {g.arrivedTime ? (
                     <span className="font-medium text-success">Arrived {g.arrivedTime}</span>
                   ) : (
@@ -304,10 +305,10 @@ function ResultOverlay({ result, onClose }: { result: CheckInResult; onClose: ()
       <div className="flex flex-1 flex-col items-center justify-center px-8">
         {result.status === "valid" ? (
           <>
-            <span className="text-2xl font-medium tracking-wide uppercase">Welcome</span>
-            <span className="mt-4 text-5xl leading-tight font-bold break-words">{result.name}</span>
-            <span className="mt-8 rounded-full border-2 border-white px-6 py-2 text-2xl font-semibold">
-              Admits 1
+            <span className="text-3xl font-medium">Welcome,</span>
+            <span className="mt-3 text-5xl leading-tight font-bold break-words">{result.name}</span>
+            <span className="mt-8 rounded-full border-4 border-white px-8 py-3 text-5xl font-bold tabular-nums">
+              Admits {result.admits}
             </span>
           </>
         ) : result.status === "already_used" ? (
@@ -315,6 +316,9 @@ function ResultOverlay({ result, onClose }: { result: CheckInResult; onClose: ()
             <span className="text-5xl leading-tight font-bold break-words">{result.name}</span>
             <span className="mt-5 text-4xl leading-tight font-bold">
               Already checked in{result.time ? ` at ${result.time}` : ""}
+            </span>
+            <span className="mt-6 rounded-full border-2 border-white px-6 py-2 text-3xl font-semibold tabular-nums">
+              Admits {result.admits}
             </span>
             <span className="mt-8 max-w-[22ch] text-xl leading-snug">
               Please refer this guest to the family representative.
@@ -356,9 +360,9 @@ function ResultOverlay({ result, onClose }: { result: CheckInResult; onClose: ()
 function describe(r: CheckInResult): string {
   switch (r.status) {
     case "valid":
-      return `Welcome, ${r.name}. Admits 1.`;
+      return `Welcome, ${r.name}. Admits ${r.admits}.`;
     case "already_used":
-      return `${r.name}. Already checked in${r.time ? ` at ${r.time}` : ""}. Please refer this guest to the family representative.`;
+      return `${r.name}. Already checked in${r.time ? ` at ${r.time}` : ""}. Admits ${r.admits}. Please refer this guest to the family representative.`;
     case "invalid":
       return "Invitation not found.";
     default:

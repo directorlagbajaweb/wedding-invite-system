@@ -15,12 +15,17 @@ export function AdminApp({ guests, siteUrl }: { guests: Guest[]; siteUrl: string
 
   const stats = useMemo(() => {
     const unassigned = guests.filter((g) => g.type === "spare" && !g.name).length;
+    const expected = guests.filter((g) => g.name || g.arrived_at);
+    const arrived = guests.filter((g) => g.arrived_at);
+    const people = (list: Guest[]) => list.reduce((sum, g) => sum + (g.admits ?? 1), 0);
     return {
-      total: guests.filter((g) => g.name || g.arrived_at).length,
+      total: expected.length,
+      people: people(expected),
       eInvites: guests.filter((g) => g.type === "e-invite").length,
       printed: guests.filter((g) => g.type === "printed").length,
       unassigned,
-      arrived: guests.filter((g) => g.arrived_at).length,
+      arrived: arrived.length,
+      peopleArrived: people(arrived),
     };
   }, [guests]);
 
@@ -60,12 +65,13 @@ export function AdminApp({ guests, siteUrl }: { guests: Guest[]; siteUrl: string
         </div>
       </header>
 
-      <dl className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <dl className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Total guests" value={stats.total} />
+        <Stat label="Total people" value={stats.people} />
         <Stat label="E-invites" value={stats.eInvites} />
         <Stat label="Printed" value={stats.printed} />
         <Stat label="Unassigned spares" value={stats.unassigned} />
-        <Stat label="Arrived" value={stats.arrived} accent />
+        <Stat label="Arrived" value={stats.arrived} sub={`${stats.peopleArrived} people`} accent />
       </dl>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
@@ -84,11 +90,12 @@ export function AdminApp({ guests, siteUrl }: { guests: Guest[]; siteUrl: string
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+function Stat({ label, value, sub, accent }: { label: string; value: number; sub?: string; accent?: boolean }) {
   return (
     <div className="rounded-2xl border border-hairline bg-card px-5 py-4">
       <dt className="text-sm text-muted">{label}</dt>
       <dd className={`mt-1 text-3xl font-semibold tabular-nums ${accent ? "text-success" : ""}`}>{value}</dd>
+      {sub ? <dd className="text-sm text-muted tabular-nums">{sub}</dd> : null}
     </div>
   );
 }

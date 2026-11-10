@@ -9,6 +9,7 @@ type Phase = "closed" | "pressing" | "closing" | "open";
 type Props = {
   name: string;
   code: string;
+  admits: number;
   qrDataUrl: string;
   joyUrl: string;
 };
@@ -34,7 +35,7 @@ function makeSparkles(): Sparkle[] {
   });
 }
 
-export function Invitation({ name, code, qrDataUrl, joyUrl }: Props) {
+export function Invitation({ name, code, admits, qrDataUrl, joyUrl }: Props) {
   const [phase, setPhase] = useState<Phase>("closed");
   const [burst, setBurst] = useState<Burst | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -70,7 +71,7 @@ export function Invitation({ name, code, qrDataUrl, joyUrl }: Props) {
   return (
     <CardShell>
       {phase === "open" ? (
-        <Revealed name={name} code={code} qrDataUrl={qrDataUrl} joyUrl={joyUrl} headingRef={headingRef} />
+        <Revealed name={name} code={code} admits={admits} qrDataUrl={qrDataUrl} joyUrl={joyUrl} headingRef={headingRef} />
       ) : (
         <Closed phase={phase} onOpen={open} />
       )}
@@ -137,6 +138,7 @@ function Closed({ phase, onOpen }: { phase: Phase; onOpen: (seal: HTMLElement) =
 function Revealed({
   name,
   code,
+  admits,
   qrDataUrl,
   joyUrl,
   headingRef,
@@ -201,7 +203,7 @@ function Revealed({
           {code}
         </p>
         <span className="mt-3 rounded-full border border-gold px-3 py-0.5 text-sm tracking-[0.12em] text-gold uppercase">
-          Admits 1
+          Admits {admits}
         </span>
       </div>
 

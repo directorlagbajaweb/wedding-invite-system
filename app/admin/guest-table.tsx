@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { MAX_ADMITS, MIN_ADMITS } from "@/lib/csv";
 import type { Guest, GuestType } from "@/lib/supabase";
-import { deleteGuest, undoCheckIn, updatePhone } from "./actions";
+import { deleteGuest, undoCheckIn, updateAdmits, updatePhone } from "./actions";
 import { btnSmall, card, formatArrival, input, inviteLink, useCopy, WhatsAppButton } from "./ui";
 
 const TYPE_LABEL: Record<GuestType, string> = {
@@ -107,11 +108,12 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
       ) : null}
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-hairline bg-white">
-        <table className="w-full min-w-[960px] text-left text-sm">
+        <table className="w-full min-w-[1040px] text-left text-sm">
           <thead className="bg-paper text-muted">
             <tr>
               <th scope="col" className="px-4 py-3 font-medium">Name</th>
               <th scope="col" className="px-4 py-3 font-medium">Phone</th>
+              <th scope="col" className="px-4 py-3 font-medium">Admits</th>
               <th scope="col" className="px-4 py-3 font-medium">Type</th>
               <th scope="col" className="px-4 py-3 font-medium">Code</th>
               <th scope="col" className="px-4 py-3 font-medium">Arrived</th>
@@ -121,7 +123,7 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
           <tbody className="divide-y divide-hairline">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted">
                   No guests match.
                 </td>
               </tr>
@@ -142,6 +144,15 @@ export function GuestTable({ guests, siteUrl }: { guests: Guest[]; siteUrl: stri
                         label={label}
                         phone={g.phone}
                         onSave={(p) => run(g.id, () => updatePhone(g.id, p))}
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <AdmitsCell
+                        key={`${g.id}:${g.admits}`}
+                        guestId={g.id}
+                        label={label}
+                        admits={g.admits ?? 1}
+                        onSave={(a) => run(g.id, () => updateAdmits(g.id, a))}
                       />
                     </td>
                     <td className="px-4 py-3">{TYPE_LABEL[g.type]}</td>
@@ -270,6 +281,84 @@ function PhoneCell({
           }
         }}
         className={`${input} h-9 w-40`}
+      />
+      <button type="submit" disabled={saving} className={btnSmall}>
+        {saving ? "Saving…" : "Save"}
+      </button>
+    </form>
+  );
+}
+
+function AdmitsCell({
+  guestId,
+  label,
+  admits,
+  onSave,
+}: {
+  guestId: string;
+  label: string;
+  admits: number;
+  onSave: (admits: number) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(admits));
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const n = Number(value);
+    if (n === admits) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    await onSave(n);
+    setSaving(false);
+    setEditing(false);
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="-mx-2 rounded-lg px-2 py-1 text-left tabular-nums hover:bg-paper"
+        aria-label={`Edit admits for ${label}, currently ${admits}`}
+      >
+        {admits}
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <label htmlFor={`admits-${guestId}`} className="sr-only">
+        Admits for {label}
+      </label>
+      <input
+        id={`admits-${guestId}`}
+        type="number"
+        inputMode="numeric"
+        min={MIN_ADMITS}
+        max={MAX_ADMITS}
+        step={1}
+        required
+        autoFocus
+        value={value}
+        disabled={saving}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setValue(String(admits));
+            setEditing(false);
+          }
+        }}
+        className={`${input} h-9 w-20`}
       />
       <button type="submit" disabled={saving} className={btnSmall}>
         {saving ? "Saving…" : "Save"}

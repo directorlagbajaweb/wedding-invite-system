@@ -12,7 +12,7 @@ export function generateCode(): string {
   return out;
 }
 
-export type NewGuest = { name: string | null; phone: string | null; type: GuestType };
+export type NewGuest = { name: string | null; phone: string | null; type: GuestType; admits: number };
 
 /**
  * Inserts guests, giving every non-printed guest a fresh code.
